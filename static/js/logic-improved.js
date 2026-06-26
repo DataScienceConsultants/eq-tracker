@@ -5,17 +5,16 @@
  * from the USGS Earthquake Hazards Program. It visualizes earthquakes by magnitude
  * using color-coded circles and provides toggleable map layers.
  * 
- * Dependencies: Leaflet, D3.js
+ * Dependencies: Leaflet
  * Data Source: USGS Earthquake Feed (https://earthquake.usgs.gov/earthquakes/feed/)
+ * Map Tiles: OpenStreetMap (free, open-source, commercial use allowed)
  */
 
 // ==================== CONFIGURATION ====================
 
-// API Configuration - Load from environment or config
-// IMPORTANT: Never hardcode API keys. Use environment variables or a backend config.
-const API_KEY = typeof MAPBOX_API_KEY !== 'undefined' ? MAPBOX_API_KEY : '';
+// USGS Data URL
 const USGS_DATA_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson";
-const MAX_ZOOM = 28;
+const MAX_ZOOM = 19;
 
 // Color scale for earthquake magnitude
 const MAGNITUDE_COLORS = {
@@ -102,53 +101,40 @@ function createPopupContent(properties) {
 
 /**
  * Create tile layers for different map styles
- * All layers use Mapbox API for consistent styling
+ * Uses free OpenStreetMap tiles (no API key required, commercial use allowed)
  */
 function createTileLayers() {
-  if (!API_KEY) {
-    console.warn('Warning: Mapbox API key not configured. Map styles may not display correctly.');
-  }
-
-  // Light map layer
+  // Light map layer - OpenStreetMap Standard
   const lightmap = L.tileLayer(
-    "https://api.mapbox.com/styles/v1/mapbox/light-v10/tiles/256/{z}/{x}/{y}?access_token={accessToken}",
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
     {
-      attribution: "Map data &copy; <a href=\"https://www.openstreetmap.org/\">OpenStreetMap</a> contributors, " +
-                   "<a href=\"https://creativecommons.org/licenses/by-sa/2.0/\">CC-BY-SA</a>, " +
-                   "Imagery © <a href=\"https://www.mapbox.com/\">Mapbox</a>",
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: MAX_ZOOM,
-      id: "mapbox.light",
-      accessToken: API_KEY
+      id: "osm.light"
     }
   );
 
-  // Satellite map layer
+  // Satellite/Aerial map layer - USGS Imagery
   const satelliteMap = L.tileLayer(
-    "https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={accessToken}",
+    "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
     {
-      attribution: "Map data &copy; <a href=\"https://www.openstreetmap.org/\">OpenStreetMap</a> contributors, " +
-                   "<a href=\"https://creativecommons.org/licenses/by-sa/2.0/\">CC-BY-SA</a>, " +
-                   "Imagery © <a href=\"https://www.mapbox.com/\">Mapbox</a>",
+      attribution: '© USGS',
       maxZoom: MAX_ZOOM,
-      id: "mapbox.satellite",
-      accessToken: API_KEY
+      id: "usgs.imagery"
     }
   );
 
-  // Dark map layer
-  const darkmap = L.tileLayer(
-    "https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={accessToken}",
+  // Topographic map layer - OpenTopoMap
+  const topoMap = L.tileLayer(
+    "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
     {
-      attribution: "Map data &copy; <a href=\"https://www.openstreetmap.org/\">OpenStreetMap</a> contributors, " +
-                   "<a href=\"https://creativecommons.org/licenses/by-sa/2.0/\">CC-BY-SA</a>, " +
-                   "Imagery © <a href=\"https://www.mapbox.com/\">Mapbox</a>",
+      attribution: '© <a href="https://opentopomap.org">OpenTopoMap</a>',
       maxZoom: MAX_ZOOM,
-      id: "mapbox.dark",
-      accessToken: API_KEY
+      id: "otp.topo"
     }
   );
 
-  return { lightmap, satelliteMap, darkmap };
+  return { lightmap, satelliteMap, topoMap };
 }
 
 // ==================== EARTHQUAKE DATA PROCESSING ====================
@@ -219,9 +205,9 @@ function fetchEarthquakeData() {
 function createMap(earthquakes, tileLayers) {
   // Base map layers
   const baseMaps = {
-    "Light Map": tileLayers.lightmap,
-    "Satellite Map": tileLayers.satelliteMap,
-    "Dark Map": tileLayers.darkmap
+    "Street Map": tileLayers.lightmap,
+    "Satellite": tileLayers.satelliteMap,
+    "Topographic": tileLayers.topoMap
   };
 
   // Overlay layers
