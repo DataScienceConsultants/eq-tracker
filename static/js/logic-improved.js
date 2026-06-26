@@ -5,6 +5,12 @@
  * from the USGS Earthquake Hazards Program. It visualizes earthquakes by magnitude
  * using color-coded circles and provides toggleable map layers.
  * 
+ * Features:
+ * - Real-time earthquake data from USGS
+ * - User geolocation with accuracy radius
+ * - Multiple map styles (Street, Satellite, Topographic)
+ * - Magnitude-based visualization
+ * 
  * Dependencies: Leaflet
  * Data Source: USGS Earthquake Feed (https://earthquake.usgs.gov/earthquakes/feed/)
  * Map Tiles: OpenStreetMap (free, open-source, commercial use allowed)
@@ -25,6 +31,11 @@ const MAGNITUDE_COLORS = {
   5: "#FF2872",    // Pink - magnitude 4-5
   6: "#3ED145"     // Green - magnitude 5+
 };
+
+// Global map reference
+let globalMap = null;
+let userMarker = null;
+let accuracyCircle = null;
 
 // ==================== UTILITY FUNCTIONS ====================
 
@@ -95,6 +106,175 @@ function createPopupContent(properties) {
   container.appendChild(magnitude);
   
   return container;
+}
+
+/**
+ * Create user location popup
+ * @param {number} accuracy - Accuracy in meters
+ * @returns {HTMLElement} Popup content element
+ */
+function createUserLocationPopup(accuracy) {
+  const container = document.createElement('div');
+  
+  const title = document.createElement('h3');
+  title.textContent = 'Your Location';
+  container.appendChild(title);
+  
+  container.appendChild(document.createElement('hr'));
+  
+  const accuracyText = document.createElement('p');
+  accuracyText.textContent = `Accuracy: ±${accuracy.toFixed(0)} meters`;
+  container.appendChild(accuracyText);
+  
+  return container;
+}
+
+// ==================== GEOLOCATION FUNCTIONS ====================
+
+/**
+ * Request user's geolocation and add marker to map
+ */
+function getUserLocation() {
+  if (!navigator.geolocation) {
+    alert('Geolocation is not supported by your browser.');
+    return;
+  }
+
+  // Show loading indicator
+  const locButton = document.getElementById('locate-btn');
+  if (locButton) {
+    locButton.textContent = 'Locating...';
+    locButton.disabled = true;
+  }
+
+  const options = {
+    enableHighAccuracy: true,
+    timeout: 10000,
+    maximumAge: 0
+  };
+
+  navigator.geolocation.getCurrentPosition(
+    function(position) {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const accuracy = position.coords.accuracy;
+
+      // Add or update user marker
+      addUserMarker(lat, lng, accuracy);
+
+      // Center map on user location with zoom level 12
+      if (globalMap) {
+        globalMap.setView([lat, lng], 12);
+      }
+
+      // Reset button
+      if (locButton) {
+        locButton.textContent = '📍 My Location';
+        locButton.disabled = false;
+      }
+
+      console.log(`User location: ${lat}, ${lng} (±${accuracy}m)`);
+    },
+    function(error) {
+      console.error('Error getting user location:', error);
+      let errorMessage = 'Unable to get your location.';
+      
+      if (error.code === error.PERMISSION_DENIED) {
+        errorMessage = 'Location permission denied. Please enable location access in your browser settings.';
+      } else if (error.code === error.POSITION_UNAVAILABLE) {
+        errorMessage = 'Location information is unavailable.';
+      } else if (error.code === error.TIMEOUT) {
+        errorMessage = 'Location request timed out.';
+      }
+      
+      alert(errorMessage);
+
+      // Reset button
+      if (locButton) {
+        locButton.textContent = '📍 My Location';
+        locButton.disabled = false;
+      }
+    },
+    options
+  );
+}
+
+/**
+ * Add user location marker to map with accuracy circle
+ * @param {number} lat - Latitude
+ * @param {number} lng - Longitude
+ * @param {number} accuracy - Accuracy in meters
+ */
+function addUserMarker(lat, lng, accuracy) {
+  if (!globalMap) return;
+
+  // Remove existing marker and circle if present
+  if (userMarker) {
+    globalMap.removeLayer(userMarker);
+  }
+  if (accuracyCircle) {
+    globalMap.removeLayer(accuracyCircle);
+  }
+
+  // Add accuracy circle
+  accuracyCircle = L.circle([lat, lng], {
+    radius: accuracy,
+    fillColor: '#4285F4',
+    fillOpacity: 0.1,
+    color: '#4285F4',
+    weight: 2,
+    dashArray: '5, 5'
+  }).addTo(globalMap);
+
+  // Add user marker (blue dot)
+  userMarker = L.circleMarker([lat, lng], {
+    radius: 8,
+    fillColor: '#4285F4',
+    fillOpacity: 1,
+    color: '#fff',
+    weight: 2
+  }).bindPopup(createUserLocationPopup(accuracy))
+    .addTo(globalMap)
+    .openPopup();
+}
+
+/**
+ * Auto-locate user on map initialization
+ */
+function autoLocateUser() {
+  if (!navigator.geolocation) {
+    console.log('Geolocation not supported');
+    return;
+  }
+
+  const options = {
+    enableHighAccuracy: false,
+    timeout: 5000,
+    maximumAge: 0
+  };
+
+  navigator.geolocation.getCurrentPosition(
+    function(position) {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const accuracy = position.coords.accuracy;
+
+      // Add user marker
+      addUserMarker(lat, lng, accuracy);
+
+      // Center map on user location with zoom level 10
+      if (globalMap) {
+        globalMap.setView([lat, lng], 10);
+      }
+
+      console.log(`Auto-located user at: ${lat}, ${lng} (±${accuracy}m)`);
+    },
+    function(error) {
+      // Silent fail - just log error and keep default world view
+      console.log('Auto-locate failed:', error);
+    },
+    options
+  );
 }
 
 // ==================== TILE LAYER DEFINITIONS ====================
@@ -222,6 +402,9 @@ function createMap(earthquakes, tileLayers) {
     layers: [tileLayers.lightmap, earthquakes]
   });
 
+  // Store map reference globally
+  globalMap = myMap;
+
   // Add layer control
   L.control.layers(baseMaps, overlayMaps, {
     collapsed: false
@@ -230,7 +413,47 @@ function createMap(earthquakes, tileLayers) {
   // Create and add legend
   createLegend(myMap);
 
+  // Create and add geolocation control
+  createGeolocationControl(myMap);
+
   return myMap;
+}
+
+/**
+ * Create custom geolocation control button
+ * @param {L.Map} map - Leaflet map instance
+ */
+function createGeolocationControl(map) {
+  const control = L.Control.extend({
+    options: {
+      position: 'topleft'
+    },
+    onAdd: function() {
+      const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+      const button = L.DomUtil.create('a', 'leaflet-control-locate', container);
+      button.id = 'locate-btn';
+      button.href = '#';
+      button.title = 'Find my location';
+      button.textContent = '📍 My Location';
+      button.style.padding = '5px 10px';
+      button.style.fontSize = '14px';
+      button.style.textDecoration = 'none';
+      button.style.color = '#333';
+      button.style.backgroundColor = '#fff';
+      button.style.borderBottom = '1px solid #ccc';
+      button.style.cursor = 'pointer';
+      button.style.display = 'block';
+
+      L.DomEvent.on(button, 'click', function(e) {
+        L.DomEvent.preventDefault(e);
+        getUserLocation();
+      });
+
+      return container;
+    }
+  });
+
+  new control().addTo(map);
 }
 
 /**
@@ -291,6 +514,7 @@ function createLegend(map) {
 /**
  * Initialize the earthquake visualization map
  * Fetches data and creates the map on page load
+ * Auto-locates user if geolocation is available
  */
 async function initializeMap() {
   try {
@@ -305,6 +529,9 @@ async function initializeMap() {
 
     // Initialize map
     createMap(earthquakes, tileLayers);
+
+    // Auto-locate user (silent, won't interrupt map loading)
+    autoLocateUser();
 
     console.log(`Map initialized with ${data.features.length} earthquakes`);
   } catch (error) {
